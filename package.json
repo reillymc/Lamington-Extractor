@@ -1,0 +1,40 @@
+{
+    "name": "lamington-extractor",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "main": "src/index.ts",
+    "scripts": {
+        "start": "NODE_ENV=development node --watch --env-file-if-exists=extractor.env src/index.ts",
+        "prod": "NODE_ENV=production node src/index.ts",
+        "test": "NODE_ENV=test node --test",
+        "test:coverage": "NODE_ENV=test node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=85 --test-coverage-functions=90 --test-coverage-include=src/**",
+        "lint": "biome check --error-on-warnings",
+        "lint:ci": "biome ci . --error-on-warnings",
+        "typecheck": "tsc --noEmit",
+        "quality:check": "npm run lint && npm run typecheck",
+        "generate:spec": "rm -f ./src/spec/schema.d.ts && openapi-typescript ./openapi.yaml --output ./src/spec/schema.d.ts --immutable --array-length",
+        "typecheck:watch": "tsc --noEmit --watch"
+    },
+    "dependencies": {
+        "@reillymc/es-utils": "^0.0.14",
+        "cheerio": "^1.2.0",
+        "express": "^5.2.1",
+        "helmet": "^8.1.0",
+        "ipaddr.js": "^1.9.1",
+        "moment": "^2.30.1",
+        "schema-dts": "^1.1.5",
+        "undici": "^7.21.0"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.3.15",
+        "@types/express": "^5.0.6",
+        "@types/node": "^24.10.13",
+        "@types/supertest": "^6.0.3",
+        "expect": "^30.2.0",
+        "supertest": "^7.2.2",
+        "typescript": "^5.9.3",
+        "openapi-typescript": "^7.13.0"
+    },
+    "license": "GPL-3.0-or-later"
+}

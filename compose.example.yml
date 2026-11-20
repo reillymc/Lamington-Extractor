@@ -1,0 +1,26 @@
+services:
+    lamington_extractor:
+        image: ghcr.io/reillymc/lamington-extractor:1.0.0
+        container_name: lamington_extractor
+        init: true
+        env_file: extractor.env
+        expose:
+            - "3001"
+        restart: unless-stopped
+        read_only: true
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,nodev,size=64m
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        pids_limit: 256
+        mem_limit: 512m
+        cpus: 1.0
+        user: node
+        healthcheck:
+            test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 10s

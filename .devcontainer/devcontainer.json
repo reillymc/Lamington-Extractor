@@ -1,0 +1,17 @@
+{
+    "name": "Lamington Extractor",
+    "image": "mcr.microsoft.com/devcontainers/typescript-node:24-trixie",
+    "remoteUser": "node",
+    "forwardPorts": [3001],
+    "containerEnv": {
+        "NODE_ENV": "development",
+        "EXTRACTOR_API_KEY": "dev-only-extractor-key-change-me-32chars"
+    },
+    "postCreateCommand": "npm ci",
+    "postStartCommand": "npm run generate:spec",
+    "customizations": {
+        "vscode": {
+            "extensions": ["biomejs.biome", "connor4312.nodejs-testing"]
+        }
+    }
+}

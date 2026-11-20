@@ -1,0 +1,16 @@
+.git
+.github
+.devcontainer
+.vscode
+.zed
+Dockerfile
+.dockerignore
+node_modules
+coverage
+tests
+*.log
+*.tsbuildinfo
+.env
+extractor.env
+compose.example.yml
+*.md

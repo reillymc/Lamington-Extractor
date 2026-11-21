@@ -1,7 +1,5 @@
 import type { components } from "./schema.d.ts";
 
-export type { components };
-
 type Schemas = components["schemas"];
 
 export type AmountFraction = Schemas["AmountFraction"];

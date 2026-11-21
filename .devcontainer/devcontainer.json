@@ -7,7 +7,7 @@
         "NODE_ENV": "development",
         "EXTRACTOR_API_KEY": "dev-only-extractor-key-change-me-32chars"
     },
-    "postCreateCommand": "npm ci",
+    "postCreateCommand": "test -f node_modules/.package-lock.json || npm ci",
     "postStartCommand": "npm run generate:spec",
     "customizations": {
         "vscode": {

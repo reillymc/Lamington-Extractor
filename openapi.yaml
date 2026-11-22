@@ -4,10 +4,13 @@ info:
   version: 1.0.0
 servers:
   - url: http://localhost:3001
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       responses:
         204:
           description: Healthy
@@ -31,6 +34,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         401:
           $ref: "#/components/responses/Unauthorized"
+        413:
+          $ref: "#/components/responses/PayloadTooLarge"
         422:
           $ref: "#/components/responses/UnprocessableEntity"
         429:
@@ -59,6 +64,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         401:
           $ref: "#/components/responses/Unauthorized"
+        413:
+          $ref: "#/components/responses/PayloadTooLarge"
         422:
           $ref: "#/components/responses/UnprocessableEntity"
         429:
@@ -85,6 +92,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Request body is too large
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     UnprocessableEntity:
       description: No recipe found
       content:
@@ -93,6 +106,11 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     TooManyRequests:
       description: Too many concurrent requests
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: string
       content:
         application/json:
           schema:
@@ -331,10 +349,9 @@ components:
       properties:
         error:
           type: boolean
-        code:
-          type: string
         message:
           type: string
       required:
         - error
+        - message
       unevaluatedProperties: false

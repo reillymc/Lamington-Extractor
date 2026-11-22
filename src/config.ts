@@ -1,4 +1,4 @@
-export type ExtractorConfig = {
+type ExtractorConfig = {
     apiKey: string | undefined;
 };
 

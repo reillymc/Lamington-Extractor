@@ -8,7 +8,6 @@
         "EXTRACTOR_API_KEY": "dev-only-extractor-key-change-me-32chars"
     },
     "postCreateCommand": "test -f node_modules/.package-lock.json || npm ci",
-    "postStartCommand": "npm run generate:spec",
     "customizations": {
         "vscode": {
             "extensions": ["biomejs.biome", "connor4312.nodejs-testing"]

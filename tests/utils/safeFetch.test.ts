@@ -5,8 +5,9 @@ import {
     createSafeFetchText,
     createSafeLookup,
     isPublicAddress,
-    safeFetchText,
 } from "../../src/utils/safeFetch.ts";
+
+const safeFetchText = createSafeFetchText();
 
 const mockFetch = (implementation: typeof fetch) =>
     mock.method(globalThis, "fetch", implementation);

@@ -2,12 +2,14 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express, {
     type NextFunction,
     type Request,
+    type RequestHandler,
     type Response,
 } from "express";
 import helmet from "helmet";
 import {
     ExtractorError,
     InternalError,
+    InvalidRequestError,
     InvalidUrlError,
     TooManyRequestsError,
     UnauthorizedError,
@@ -16,6 +18,19 @@ import type { RecipeExtractionService } from "./services/recipeExtractionService
 
 const MAX_URL_LENGTH = 2_048;
 const MAX_CONCURRENCY = 8;
+
+const jsonParser = express.json({ limit: "16kb" });
+
+const parseJsonBody: RequestHandler = (request, response, next) => {
+    jsonParser(request, response, (error) => {
+        if (!error) {
+            next();
+            return;
+        }
+
+        next(new InvalidRequestError(undefined, error));
+    });
+};
 
 const safeEqual = (left: string, right: string): boolean => {
     const leftHash = createHash("sha256").update(left).digest();
@@ -97,14 +112,17 @@ const errorHandler = (
         console.error(extractorError.message, extractorError.innerError);
     }
 
+    if (extractorError.status === 429) {
+        response.set("Retry-After", "1");
+    }
+
     return response.status(extractorError.status).json({
         error: true,
-        code: extractorError.code,
         message: extractorError.message,
     });
 };
 
-export type AppOptions = {
+type AppOptions = {
     service: RecipeExtractionService;
     apiKey?: string;
 };
@@ -116,11 +134,11 @@ export const createApp = ({ service, apiKey }: AppOptions) => {
 
     return express()
         .use(helmet())
-        .use(express.json({ limit: "16kb" }))
-        .use(limitConcurrency(MAX_CONCURRENCY))
         .get("/health", (_request, response) => {
             response.status(204).send();
         })
+        .use(parseJsonBody)
+        .use(limitConcurrency(MAX_CONCURRENCY))
         .use("/v1", requireApiKey(apiKey))
         .post("/v1/recipeMetadata", async (request, response) => {
             const url = readUrl(request.body);

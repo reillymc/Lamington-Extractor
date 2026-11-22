@@ -7,7 +7,6 @@ import { isIP, type LookupFunction } from "node:net";
 import ipaddr from "ipaddr.js";
 import { Agent, type Dispatcher } from "undici";
 import {
-    DisallowedUrlError,
     ExtractionLimitError,
     FetchFailedError,
     InvalidUrlError,
@@ -82,26 +81,26 @@ const isLocalHostname = (hostname: string): boolean => {
 
 const assertSafeTarget = (url: URL): void => {
     if (!ALLOWED_PROTOCOLS.has(url.protocol)) {
-        throw new DisallowedUrlError(`Unsupported protocol: ${url.protocol}`);
+        throw new InvalidUrlError(`Unsupported protocol: ${url.protocol}`);
     }
 
     if (url.username || url.password) {
-        throw new DisallowedUrlError("URL credentials are not allowed");
+        throw new InvalidUrlError("URL credentials are not allowed");
     }
 
     const port = url.port || (url.protocol === "https:" ? "443" : "80");
     if (!ALLOWED_PORTS.has(port)) {
-        throw new DisallowedUrlError(`Disallowed port: ${port}`);
+        throw new InvalidUrlError(`Disallowed port: ${port}`);
     }
 
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
 
     if (isLocalHostname(hostname)) {
-        throw new DisallowedUrlError(`Disallowed host: ${hostname}`);
+        throw new InvalidUrlError(`Disallowed host: ${hostname}`);
     }
 
     if (isIP(hostname) !== 0) {
-        throw new DisallowedUrlError(`Disallowed address: ${hostname}`);
+        throw new InvalidUrlError(`Disallowed address: ${hostname}`);
     }
 };
 
@@ -134,7 +133,7 @@ export const createSafeLookup =
                 addresses.some(({ address }) => !isPublicAddress(address))
             ) {
                 callback(
-                    new DisallowedUrlError(`Disallowed host: ${hostname}`),
+                    new InvalidUrlError(`Disallowed host: ${hostname}`),
                     "",
                     0,
                 );
@@ -171,6 +170,7 @@ type FetchImplementation = (
     init: RequestInit & { dispatcher: Dispatcher },
 ) => Promise<Response>;
 
+// Node's global fetch is backed by undici and honours the `dispatcher` option.
 const defaultFetch: FetchImplementation = (input, init) =>
     fetch(input, init as RequestInit) as Promise<Response>;
 
@@ -315,5 +315,3 @@ export const createSafeFetchText = (
         }
     };
 };
-
-export const safeFetchText = createSafeFetchText();

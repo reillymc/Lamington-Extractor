@@ -10,7 +10,7 @@ coverage
 tests
 *.log
 *.tsbuildinfo
+src/spec/schema.d.ts
 .env
-extractor.env
 compose.example.yml
 *.md

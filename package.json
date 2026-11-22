@@ -5,15 +5,17 @@
     "type": "module",
     "main": "src/index.ts",
     "scripts": {
-        "start": "NODE_ENV=development node --watch --env-file-if-exists=extractor.env src/index.ts",
+        "start": "NODE_ENV=development node --watch --env-file-if-exists=.env src/index.ts",
         "prod": "NODE_ENV=production node src/index.ts",
         "test": "NODE_ENV=test node --test",
         "test:coverage": "NODE_ENV=test node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=85 --test-coverage-functions=90 --test-coverage-include=src/**",
         "lint": "biome check --error-on-warnings",
         "lint:ci": "biome ci . --error-on-warnings",
         "typecheck": "tsc --noEmit",
-        "quality:check": "npm run lint && npm run typecheck",
-        "generate:spec": "rm -f ./src/spec/schema.d.ts && openapi-typescript ./openapi.yaml --output ./src/spec/schema.d.ts --immutable --array-length",
+        "knip": "knip",
+        "quality:check": "npm run lint && npm run typecheck && npm run knip",
+        "generate:spec": "node tools/Scripts/generate_spec.ts",
+        "postinstall": "node tools/Scripts/generate_spec.ts --if-available",
         "typecheck:watch": "tsc --noEmit --watch"
     },
     "dependencies": {
@@ -23,7 +25,6 @@
         "helmet": "^8.1.0",
         "ipaddr.js": "^1.9.1",
         "moment": "^2.30.1",
-        "schema-dts": "^1.1.5",
         "undici": "^7.21.0"
     },
     "devDependencies": {
@@ -32,9 +33,14 @@
         "@types/node": "^24.10.13",
         "@types/supertest": "^6.0.3",
         "expect": "^30.2.0",
+        "knip": "^5.83.1",
+        "openapi-typescript": "^7.13.0",
+        "schema-dts": "^1.1.5",
         "supertest": "^7.2.2",
-        "typescript": "^5.9.3",
-        "openapi-typescript": "^7.13.0"
+        "typescript": "^5.9.3"
+    },
+    "engines": {
+        "node": ">=24"
     },
     "license": "GPL-3.0-or-later"
 }

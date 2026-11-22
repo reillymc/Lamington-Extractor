@@ -18,5 +18,3 @@ export const MAX_IMAGES = 100;
 export const MAX_TAG_CANDIDATES = 1_000;
 export const MAX_RECIPE_GRAPH_NODES = 1_000;
 export const MAX_RECIPE_GRAPH_DEPTH = 50;
-export const MAX_MATCH_CANDIDATES = 5_000;
-export const MAX_MATCH_WORK = 1_000_000;

@@ -4,13 +4,15 @@ Recipe extraction service for Lamington. It fetches untrusted recipe pages, pars
 
 ## Development
 
-Run the service inside the container:
+Install dependencies and create a local environment file:
 
 ```sh
+npm ci
+cp .env.example .env
 npm start
 ```
 
-The service listens on port `3001`.
+The service listens on port `3001` by default.
 
 ## API
 

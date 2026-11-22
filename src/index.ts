@@ -1,7 +1,11 @@
 import { loadConfig } from "./config.ts";
 import { createApp } from "./server.ts";
+import { createImageFetchService } from "./services/imageFetchService.ts";
 import { createRecipeExtractionService } from "./services/recipeExtractionService.ts";
-import { createSafeFetchText } from "./utils/safeFetch.ts";
+import {
+    createSafeFetchBuffer,
+    createSafeFetchText,
+} from "./utils/safeFetch.ts";
 
 const DEFAULT_PORT = 3001;
 
@@ -11,10 +15,11 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 
 const config = loadConfig();
-const fetchText = createSafeFetchText();
-const service = createRecipeExtractionService(fetchText);
+const recipeService = createRecipeExtractionService(createSafeFetchText());
+const imageService = createImageFetchService(createSafeFetchBuffer());
 const app = createApp({
-    service,
+    recipeService,
+    imageService,
     apiKey: config.apiKey,
 });
 

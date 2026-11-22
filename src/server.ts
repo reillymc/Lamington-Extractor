@@ -14,6 +14,7 @@ import {
     TooManyRequestsError,
     UnauthorizedError,
 } from "./errors.ts";
+import type { ImageFetchService } from "./services/imageFetchService.ts";
 import type { RecipeExtractionService } from "./services/recipeExtractionService.ts";
 
 const MAX_URL_LENGTH = 2_048;
@@ -123,11 +124,16 @@ const errorHandler = (
 };
 
 type AppOptions = {
-    service: RecipeExtractionService;
+    recipeService: RecipeExtractionService;
+    imageService: ImageFetchService;
     apiKey?: string;
 };
 
-export const createApp = ({ service, apiKey }: AppOptions) => {
+export const createApp = ({
+    recipeService,
+    imageService,
+    apiKey,
+}: AppOptions) => {
     if (process.env.NODE_ENV === "production" && !apiKey) {
         throw new Error("EXTRACTOR_API_KEY is required in production");
     }
@@ -142,13 +148,21 @@ export const createApp = ({ service, apiKey }: AppOptions) => {
         .use("/v1", requireApiKey(apiKey))
         .post("/v1/recipeMetadata", async (request, response) => {
             const url = readUrl(request.body);
-            const data = await service.extractRecipeMetadata(url);
+            const data = await recipeService.extractRecipeMetadata(url);
             response.status(200).json(data);
         })
         .post("/v1/recipe", async (request, response) => {
             const url = readUrl(request.body);
-            const data = await service.extractRecipe(url);
+            const data = await recipeService.extractRecipe(url);
             response.status(200).json(data);
+        })
+        .post("/v1/image", async (request, response) => {
+            const url = readUrl(request.body);
+            const image = await imageService.fetchImage(url);
+            response
+                .status(200)
+                .set("content-type", image.contentType)
+                .send(image.body);
         })
         .use(errorHandler);
 };

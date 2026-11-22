@@ -36,6 +36,12 @@ export class ExtractionLimitError extends ExtractorError {
     }
 }
 
+export class UnsupportedMediaTypeError extends ExtractorError {
+    constructor(message = "Unsupported content type") {
+        super({ status: 415, message });
+    }
+}
+
 export class NoRecipeFoundError extends ExtractorError {
     constructor(message = "No recipe found") {
         super({ status: 422, message });

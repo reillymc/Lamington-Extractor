@@ -10,16 +10,17 @@ import {
     ExtractionLimitError,
     FetchFailedError,
     InvalidUrlError,
+    UnsupportedMediaTypeError,
 } from "../errors.ts";
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 const FETCH_TIMEOUT_MS = 8_000;
-const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const ALLOWED_PORTS = new Set(["80", "443"]);
-const ALLOWED_CONTENT_TYPES = new Set([
+const TEXT_CONTENT_TYPES = new Set([
     "text/html",
     "application/xhtml+xml",
     "text/plain",
@@ -180,6 +181,27 @@ export type SafeFetchResult = {
     text: string;
 };
 
+export type SafeFetchBufferResult = {
+    ok: boolean;
+    status: number;
+    body: Buffer;
+    contentType: string | null;
+};
+
+type SafeFetchTextOptions = {
+    validateResponse?: (response: Response) => void;
+};
+
+export type SafeFetchBufferOptions = {
+    maxBytes?: number;
+    validateResponse?: (response: Response) => void;
+};
+
+export type SafeFetchBuffer = (
+    input: string,
+    options?: SafeFetchBufferOptions,
+) => Promise<SafeFetchBufferResult>;
+
 const isAllowedContentType = (
     contentType: string | null,
     allowedContentTypes: ReadonlySet<string>,
@@ -191,16 +213,17 @@ const isAllowedContentType = (
     return !!baseType && allowedContentTypes.has(baseType);
 };
 
-const readCappedText = async (
+const readCappedBody = async (
     response: Response,
     maxBytes: number,
-): Promise<string> => {
+): Promise<Buffer> => {
     const declaredLength = Number(response.headers.get("content-length"));
     if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        await response.body?.cancel().catch(() => undefined);
         throw new ExtractionLimitError("Response exceeds size limit");
     }
 
-    if (!response.body) return "";
+    if (!response.body) return Buffer.alloc(0);
 
     const reader = response.body.getReader();
     const chunks: Array<Uint8Array> = [];
@@ -213,105 +236,169 @@ const readCappedText = async (
         if (value) {
             total += value.byteLength;
             if (total > maxBytes) {
-                await reader.cancel();
+                await reader.cancel().catch(() => undefined);
                 throw new ExtractionLimitError("Response exceeds size limit");
             }
             chunks.push(value);
         }
     }
 
-    return Buffer.concat(chunks).toString("utf8");
+    return Buffer.concat(chunks);
+};
+
+const readCappedText = async (
+    response: Response,
+    maxBytes: number,
+): Promise<string> =>
+    (await readCappedBody(response, maxBytes)).toString("utf8");
+
+const mapReadError = (error: unknown): never => {
+    if (error instanceof ExtractionLimitError) throw error;
+    if (
+        error instanceof Error &&
+        (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+        throw new FetchFailedError("Request timed out", error);
+    }
+    throw new FetchFailedError("Failed to read remote content", error);
+};
+
+const fetchWithSafeRedirects = async (
+    input: string,
+    fetchImplementation: FetchImplementation,
+    dispatcher: Dispatcher,
+    validateResponse?: (response: Response) => void,
+): Promise<Response> => {
+    let current: URL;
+    try {
+        current = new URL(input);
+    } catch {
+        throw new InvalidUrlError();
+    }
+
+    const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+
+    for (let redirectCount = 0; ; redirectCount += 1) {
+        assertSafeTarget(current);
+
+        let response: Response;
+        try {
+            response = await fetchImplementation(current, {
+                redirect: "manual",
+                signal,
+                headers: { "user-agent": USER_AGENT },
+                dispatcher,
+            });
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                (error.name === "AbortError" || error.name === "TimeoutError")
+            ) {
+                throw new FetchFailedError("Request timed out", error);
+            }
+            throw new FetchFailedError("Failed to fetch remote content", error);
+        }
+
+        if (REDIRECT_STATUSES.has(response.status)) {
+            await response.body?.cancel().catch(() => undefined);
+
+            if (redirectCount >= MAX_REDIRECTS) {
+                throw new FetchFailedError("Too many redirects");
+            }
+
+            const location = response.headers.get("location");
+            if (!location) {
+                throw new FetchFailedError("Redirect missing Location header");
+            }
+
+            try {
+                current = new URL(location, current);
+            } catch {
+                throw new FetchFailedError("Invalid redirect location");
+            }
+            continue;
+        }
+
+        if (validateResponse) {
+            try {
+                validateResponse(response);
+            } catch (error) {
+                await response.body?.cancel().catch(() => undefined);
+                throw error;
+            }
+        }
+
+        return response;
+    }
+};
+
+const validateTextResponse = (response: Response): void => {
+    if (
+        !isAllowedContentType(
+            response.headers.get("content-type"),
+            TEXT_CONTENT_TYPES,
+        )
+    ) {
+        throw new UnsupportedMediaTypeError("Unsupported content type");
+    }
 };
 
 export const createSafeFetchText = (
     fetchImplementation: FetchImplementation = defaultFetch,
     dispatcher: Dispatcher = safeDispatcher,
 ) => {
-    return async (input: string): Promise<SafeFetchResult> => {
-        let current: URL;
+    return async (
+        input: string,
+        { validateResponse = validateTextResponse }: SafeFetchTextOptions = {},
+    ): Promise<SafeFetchResult> => {
+        const response = await fetchWithSafeRedirects(
+            input,
+            fetchImplementation,
+            dispatcher,
+            validateResponse,
+        );
+
+        let text: string;
         try {
-            current = new URL(input);
-        } catch {
-            throw new InvalidUrlError();
+            text = await readCappedText(response, DEFAULT_MAX_BYTES);
+        } catch (error) {
+            throw mapReadError(error);
         }
 
-        const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+        return { ok: response.ok, status: response.status, text };
+    };
+};
 
-        for (let redirectCount = 0; ; redirectCount += 1) {
-            assertSafeTarget(current);
+export const createSafeFetchBuffer = (
+    fetchImplementation: FetchImplementation = defaultFetch,
+    dispatcher: Dispatcher = safeDispatcher,
+): SafeFetchBuffer => {
+    return async (
+        input: string,
+        {
+            maxBytes = DEFAULT_MAX_BYTES,
+            validateResponse,
+        }: SafeFetchBufferOptions = {},
+    ): Promise<SafeFetchBufferResult> => {
+        const response = await fetchWithSafeRedirects(
+            input,
+            fetchImplementation,
+            dispatcher,
+            validateResponse,
+        );
 
-            let response: Response;
-            try {
-                response = await fetchImplementation(current, {
-                    redirect: "manual",
-                    signal,
-                    headers: { "user-agent": USER_AGENT },
-                    dispatcher,
-                });
-            } catch (error) {
-                if (
-                    error instanceof Error &&
-                    (error.name === "AbortError" ||
-                        error.name === "TimeoutError")
-                ) {
-                    throw new FetchFailedError("Request timed out", error);
-                }
-                throw new FetchFailedError(
-                    "Failed to fetch remote content",
-                    error,
-                );
-            }
-
-            if (REDIRECT_STATUSES.has(response.status)) {
-                await response.body?.cancel().catch(() => undefined);
-
-                if (redirectCount >= MAX_REDIRECTS) {
-                    throw new FetchFailedError("Too many redirects");
-                }
-
-                const location = response.headers.get("location");
-                if (!location) {
-                    throw new FetchFailedError(
-                        "Redirect missing Location header",
-                    );
-                }
-
-                try {
-                    current = new URL(location, current);
-                } catch {
-                    throw new FetchFailedError("Invalid redirect location");
-                }
-                continue;
-            }
-
-            if (
-                !isAllowedContentType(
-                    response.headers.get("content-type"),
-                    ALLOWED_CONTENT_TYPES,
-                )
-            ) {
-                await response.body?.cancel().catch(() => undefined);
-                throw new FetchFailedError("Unsupported content type");
-            }
-
-            let text: string;
-            try {
-                text = await readCappedText(response, MAX_RESPONSE_BYTES);
-            } catch (error) {
-                if (error instanceof ExtractionLimitError) throw error;
-                if (
-                    error instanceof Error &&
-                    (error.name === "AbortError" ||
-                        error.name === "TimeoutError")
-                ) {
-                    throw new FetchFailedError("Request timed out", error);
-                }
-                throw new FetchFailedError(
-                    "Failed to read remote content",
-                    error,
-                );
-            }
-            return { ok: response.ok, status: response.status, text };
+        let body: Buffer;
+        try {
+            body = await readCappedBody(response, maxBytes);
+        } catch (error) {
+            throw mapReadError(error);
         }
+
+        return {
+            ok: response.ok,
+            status: response.status,
+            body,
+            contentType: response.headers.get("content-type"),
+        };
     };
 };

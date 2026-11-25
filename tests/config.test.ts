@@ -8,6 +8,14 @@ describe("loadConfig", () => {
         expect(config.apiKey).toBeUndefined();
     });
 
+    it("disables auth outside production by default", () => {
+        const config = loadConfig({
+            NODE_ENV: "development",
+            EXTRACTOR_API_KEY: "test-key",
+        });
+        expect(config.apiKey).toBeUndefined();
+    });
+
     it("requires an API key in production", () => {
         expect(() => loadConfig({ NODE_ENV: "production" })).toThrow(
             "EXTRACTOR_API_KEY is required",
@@ -20,5 +28,23 @@ describe("loadConfig", () => {
             EXTRACTOR_API_KEY: "test-key",
         });
         expect(config.apiKey).toBe("test-key");
+    });
+
+    it("enables auth outside production when requested", () => {
+        const config = loadConfig({
+            NODE_ENV: "development",
+            EXTRACTOR_REQUIRE_AUTH: "true",
+            EXTRACTOR_API_KEY: "test-key",
+        });
+        expect(config.apiKey).toBe("test-key");
+    });
+
+    it("requires an API key when auth is explicitly enabled", () => {
+        expect(() =>
+            loadConfig({
+                NODE_ENV: "development",
+                EXTRACTOR_REQUIRE_AUTH: "true",
+            }),
+        ).toThrow("EXTRACTOR_API_KEY is required");
     });
 });

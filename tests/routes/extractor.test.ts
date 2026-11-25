@@ -192,6 +192,48 @@ describe("extractor routes", () => {
     });
 });
 
+describe("api docs", () => {
+    it("redirects to the trailing slash", async () => {
+        const response = await request(
+            createApp({ recipeService, imageService }),
+        ).get("/docs");
+
+        expect(response.status).toBe(308);
+        expect(response.headers.location).toBe("/docs/");
+    });
+
+    it("serves swagger ui", async () => {
+        const response = await request(
+            createApp({ recipeService, imageService }),
+        ).get("/docs/");
+
+        expect(response.status).toBe(200);
+        expect(response.type).toBe("text/html");
+        expect(response.text).toContain("swagger-ui");
+        expect(response.headers["content-security-policy"]).toContain(
+            "'unsafe-inline'",
+        );
+    });
+
+    it("serves swagger ui bundle", async () => {
+        const response = await request(
+            createApp({ recipeService, imageService }),
+        ).get("/docs/swagger-ui-bundle.js");
+
+        expect(response.status).toBe(200);
+        expect(response.headers["content-type"]).toContain("javascript");
+    });
+
+    it("serves swagger ui assets", async () => {
+        const response = await request(
+            createApp({ recipeService, imageService }),
+        ).get("/docs/swagger-ui.css");
+
+        expect(response.status).toBe(200);
+        expect(response.headers["content-type"]).toContain("text/css");
+    });
+});
+
 describe("fetch image", () => {
     it("returns image bytes", async () => {
         const response = await request(

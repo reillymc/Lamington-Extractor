@@ -24,6 +24,7 @@ COPY tools/Scripts/generate_spec.ts ./tools/Scripts/generate_spec.ts
 RUN npm ci --omit=dev
 
 COPY --from=build /home/node/app/LICENCE ./LICENCE
+COPY --from=build /home/node/app/openapi.yaml ./openapi.yaml
 COPY --from=build /home/node/app/src ./src
 
 RUN chown -R node:node /home/node/app

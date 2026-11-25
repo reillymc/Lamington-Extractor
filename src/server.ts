@@ -6,6 +6,7 @@ import express, {
     type Response,
 } from "express";
 import helmet from "helmet";
+import { createDocsRouter } from "./docs.ts";
 import {
     ExtractorError,
     InternalError,
@@ -140,6 +141,15 @@ export const createApp = ({
 
     return express()
         .use(helmet())
+        .get("/docs", (request, response, next) => {
+            if (request.path !== "/docs") {
+                next();
+                return;
+            }
+
+            response.redirect(308, "/docs/");
+        })
+        .use("/docs", createDocsRouter())
         .get("/health", (_request, response) => {
             response.status(204).send();
         })

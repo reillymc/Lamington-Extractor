@@ -4,8 +4,7 @@
     "remoteUser": "node",
     "forwardPorts": [3001],
     "containerEnv": {
-        "NODE_ENV": "development",
-        "EXTRACTOR_API_KEY": "dev-only-extractor-key-change-me-32chars"
+        "NODE_ENV": "development"
     },
     "postCreateCommand": "test -f node_modules/.package-lock.json || npm ci",
     "customizations": {

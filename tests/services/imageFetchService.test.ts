@@ -2,7 +2,6 @@ import { afterEach, describe, it, mock } from "node:test";
 import { expect } from "expect";
 import {
     ExtractionLimitError,
-    FetchFailedError,
     UnsupportedMediaTypeError,
 } from "../../src/errors.ts";
 import { createImageFetchService } from "../../src/services/imageFetchService.ts";
@@ -49,12 +48,35 @@ describe("image fetch service", () => {
         ).rejects.toThrow(UnsupportedMediaTypeError);
     });
 
-    it("rejects failed upstream requests", async () => {
+    it("rejects failed upstream requests with context", async () => {
         mockFetch(async () => new Response("missing", { status: 404 }));
 
         await expect(
             imageService.fetchImage("https://example.com/image.jpg"),
-        ).rejects.toThrow(FetchFailedError);
+        ).rejects.toThrow(
+            "Upstream request failed: example.com returned 404 Not Found",
+        );
+    });
+
+    it("includes upstream mitigation details in image errors", async () => {
+        mockFetch(
+            async () =>
+                new Response("blocked", {
+                    status: 403,
+                    statusText: "Forbidden",
+                    headers: {
+                        "content-type": "text/html; charset=UTF-8",
+                        server: "cloudflare",
+                        "cf-mitigated": "challenge",
+                    },
+                }),
+        );
+
+        await expect(
+            imageService.fetchImage("https://example.com/image.jpg"),
+        ).rejects.toThrow(
+            "Upstream request failed: example.com returned 403 Forbidden (server: cloudflare, cf-mitigated: challenge)",
+        );
     });
 
     it("rejects oversized images", async () => {

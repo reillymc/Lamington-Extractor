@@ -3,6 +3,7 @@ import {
     type LookupAddress,
     type LookupAllOptions,
 } from "node:dns";
+import { STATUS_CODES } from "node:http";
 import { isIP, type LookupFunction } from "node:net";
 import ipaddr from "ipaddr.js";
 import { Agent, type Dispatcher } from "undici";
@@ -27,6 +28,34 @@ const TEXT_CONTENT_TYPES = new Set([
 ]);
 
 const USER_AGENT = "LamingtonRecipeExtractor/1.0";
+const MAX_HEADER_LENGTH = 200;
+
+export type SafeFetchMetadata = {
+    status: number;
+    statusText: string;
+    host: string;
+    contentType: string | null;
+    server: string | null;
+    mitigation: string | null;
+};
+
+const readHeader = (headers: Headers, name: string): string | null => {
+    const value = headers.get(name)?.trim();
+    return value ? value.slice(0, MAX_HEADER_LENGTH) : null;
+};
+
+export const readSafeFetchMetadata = (
+    response: Response,
+    url: URL,
+): SafeFetchMetadata => ({
+    status: response.status,
+    statusText:
+        response.statusText || STATUS_CODES[response.status] || "Unknown",
+    host: url.hostname,
+    contentType: readHeader(response.headers, "content-type"),
+    server: readHeader(response.headers, "server"),
+    mitigation: readHeader(response.headers, "cf-mitigated"),
+});
 
 const BLOCKED_IPV4_RANGES = ["198.18.0.0/15"].map(
     (range) => ipaddr.parseCIDR(range) as [ipaddr.IPv4, number],
@@ -175,26 +204,26 @@ type FetchImplementation = (
 const defaultFetch: FetchImplementation = (input, init) =>
     fetch(input, init as RequestInit) as Promise<Response>;
 
-export type SafeFetchResult = {
+export type SafeFetchResult = SafeFetchMetadata & {
     ok: boolean;
-    status: number;
     text: string;
 };
 
-export type SafeFetchBufferResult = {
+export type SafeFetchBufferResult = SafeFetchMetadata & {
     ok: boolean;
-    status: number;
     body: Buffer;
-    contentType: string | null;
 };
 
-type SafeFetchTextOptions = {
-    validateResponse?: (response: Response) => void;
+type ValidateResponse = (response: Response, url: URL) => void;
+
+export type SafeFetchTextOptions = {
+    validateResponse?: ValidateResponse;
+    timeoutMs?: number;
 };
 
 export type SafeFetchBufferOptions = {
     maxBytes?: number;
-    validateResponse?: (response: Response) => void;
+    validateResponse?: ValidateResponse;
 };
 
 export type SafeFetchBuffer = (
@@ -252,23 +281,30 @@ const readCappedText = async (
 ): Promise<string> =>
     (await readCappedBody(response, maxBytes)).toString("utf8");
 
-const mapReadError = (error: unknown): never => {
+const mapReadError = (error: unknown, host: string): never => {
     if (error instanceof ExtractionLimitError) throw error;
     if (
         error instanceof Error &&
         (error.name === "AbortError" || error.name === "TimeoutError")
     ) {
-        throw new FetchFailedError("Request timed out", error);
+        throw new FetchFailedError(
+            `Upstream request to ${host} timed out`,
+            error,
+        );
     }
-    throw new FetchFailedError("Failed to read remote content", error);
+    throw new FetchFailedError(
+        `Failed to read remote content from ${host}`,
+        error,
+    );
 };
 
 const fetchWithSafeRedirects = async (
     input: string,
     fetchImplementation: FetchImplementation,
     dispatcher: Dispatcher,
-    validateResponse?: (response: Response) => void,
-): Promise<Response> => {
+    timeoutMs: number,
+    validateResponse?: ValidateResponse,
+): Promise<{ response: Response; url: URL }> => {
     let current: URL;
     try {
         current = new URL(input);
@@ -276,7 +312,7 @@ const fetchWithSafeRedirects = async (
         throw new InvalidUrlError();
     }
 
-    const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+    const signal = AbortSignal.timeout(timeoutMs);
 
     for (let redirectCount = 0; ; redirectCount += 1) {
         assertSafeTarget(current);
@@ -294,53 +330,66 @@ const fetchWithSafeRedirects = async (
                 error instanceof Error &&
                 (error.name === "AbortError" || error.name === "TimeoutError")
             ) {
-                throw new FetchFailedError("Request timed out", error);
+                throw new FetchFailedError(
+                    `Upstream request to ${current.hostname} timed out`,
+                    error,
+                );
             }
-            throw new FetchFailedError("Failed to fetch remote content", error);
+            throw new FetchFailedError(
+                `Failed to fetch remote content from ${current.hostname}`,
+                error,
+            );
         }
 
         if (REDIRECT_STATUSES.has(response.status)) {
             await response.body?.cancel().catch(() => undefined);
 
             if (redirectCount >= MAX_REDIRECTS) {
-                throw new FetchFailedError("Too many redirects");
+                throw new FetchFailedError(
+                    `Too many redirects for ${current.hostname}`,
+                );
             }
 
             const location = response.headers.get("location");
             if (!location) {
-                throw new FetchFailedError("Redirect missing Location header");
+                throw new FetchFailedError(
+                    `Redirect missing Location header from ${current.hostname}`,
+                );
             }
 
             try {
                 current = new URL(location, current);
             } catch {
-                throw new FetchFailedError("Invalid redirect location");
+                throw new FetchFailedError(
+                    `Invalid redirect location from ${current.hostname}`,
+                );
             }
             continue;
         }
 
         if (validateResponse) {
             try {
-                validateResponse(response);
+                validateResponse(response, current);
             } catch (error) {
                 await response.body?.cancel().catch(() => undefined);
                 throw error;
             }
         }
 
-        return response;
+        return { response, url: current };
     }
 };
 
 const validateTextResponse = (response: Response): void => {
-    if (
-        !isAllowedContentType(
-            response.headers.get("content-type"),
-            TEXT_CONTENT_TYPES,
-        )
-    ) {
-        throw new UnsupportedMediaTypeError("Unsupported content type");
-    }
+    const contentType = response.headers.get("content-type");
+    if (isAllowedContentType(contentType, TEXT_CONTENT_TYPES)) return;
+
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    throw new UnsupportedMediaTypeError(
+        mediaType
+            ? `Unsupported content type: ${mediaType}`
+            : "Unsupported content type",
+    );
 };
 
 export const createSafeFetchText = (
@@ -349,12 +398,16 @@ export const createSafeFetchText = (
 ) => {
     return async (
         input: string,
-        { validateResponse = validateTextResponse }: SafeFetchTextOptions = {},
+        {
+            validateResponse = validateTextResponse,
+            timeoutMs = FETCH_TIMEOUT_MS,
+        }: SafeFetchTextOptions = {},
     ): Promise<SafeFetchResult> => {
-        const response = await fetchWithSafeRedirects(
+        const { response, url } = await fetchWithSafeRedirects(
             input,
             fetchImplementation,
             dispatcher,
+            timeoutMs,
             validateResponse,
         );
 
@@ -362,10 +415,14 @@ export const createSafeFetchText = (
         try {
             text = await readCappedText(response, DEFAULT_MAX_BYTES);
         } catch (error) {
-            throw mapReadError(error);
+            throw mapReadError(error, url.hostname);
         }
 
-        return { ok: response.ok, status: response.status, text };
+        return {
+            ok: response.ok,
+            text,
+            ...readSafeFetchMetadata(response, url),
+        };
     };
 };
 
@@ -380,10 +437,11 @@ export const createSafeFetchBuffer = (
             validateResponse,
         }: SafeFetchBufferOptions = {},
     ): Promise<SafeFetchBufferResult> => {
-        const response = await fetchWithSafeRedirects(
+        const { response, url } = await fetchWithSafeRedirects(
             input,
             fetchImplementation,
             dispatcher,
+            FETCH_TIMEOUT_MS,
             validateResponse,
         );
 
@@ -391,14 +449,13 @@ export const createSafeFetchBuffer = (
         try {
             body = await readCappedBody(response, maxBytes);
         } catch (error) {
-            throw mapReadError(error);
+            throw mapReadError(error, url.hostname);
         }
 
         return {
             ok: response.ok,
-            status: response.status,
             body,
-            contentType: response.headers.get("content-type"),
+            ...readSafeFetchMetadata(response, url),
         };
     };
 };

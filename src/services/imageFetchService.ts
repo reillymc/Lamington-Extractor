@@ -1,5 +1,9 @@
-import { FetchFailedError, UnsupportedMediaTypeError } from "../errors.ts";
-import type { SafeFetchBuffer } from "../utils/safeFetch.ts";
+import { UnsupportedMediaTypeError } from "../errors.ts";
+import {
+    readSafeFetchMetadata,
+    type SafeFetchBuffer,
+} from "../utils/safeFetch.ts";
+import { createUpstreamHttpError } from "../utils/upstreamError.ts";
 
 const MAX_REMOTE_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -36,20 +40,23 @@ export const createImageFetchService = (
     fetchImage: async (url: string) => {
         const result = await fetchBuffer(url, {
             maxBytes: MAX_REMOTE_IMAGE_BYTES,
-            validateResponse: (response) => {
+            validateResponse: (response, url) => {
                 if (!response.ok) {
-                    throw new FetchFailedError(
-                        `Image request failed with status ${response.status}`,
+                    throw createUpstreamHttpError(
+                        readSafeFetchMetadata(response, url),
                     );
                 }
 
-                if (
-                    !isSupportedImageContentType(
-                        response.headers.get("content-type"),
-                    )
-                ) {
+                const contentType = response.headers.get("content-type");
+                if (!isSupportedImageContentType(contentType)) {
+                    const mediaType = contentType
+                        ?.split(";", 1)[0]
+                        ?.trim()
+                        .toLowerCase();
                     throw new UnsupportedMediaTypeError(
-                        "Unsupported image content type",
+                        mediaType
+                            ? `Unsupported image content type: ${mediaType}`
+                            : "Unsupported image content type",
                     );
                 }
             },

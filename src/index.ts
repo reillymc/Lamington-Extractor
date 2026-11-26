@@ -2,6 +2,7 @@ import { loadConfig } from "./config.ts";
 import { createApp } from "./server.ts";
 import { createImageFetchService } from "./services/imageFetchService.ts";
 import { createRecipeExtractionService } from "./services/recipeExtractionService.ts";
+import { createArchiveFetcher } from "./utils/archiveFetcher.ts";
 import {
     createSafeFetchBuffer,
     createSafeFetchText,
@@ -15,7 +16,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 
 const config = loadConfig();
-const recipeService = createRecipeExtractionService(createSafeFetchText());
+const safeFetchText = createSafeFetchText();
+const archiveFetcher = createArchiveFetcher(safeFetchText);
+const recipeService = createRecipeExtractionService(
+    safeFetchText,
+    archiveFetcher,
+);
 const imageService = createImageFetchService(createSafeFetchBuffer());
 const app = createApp({
     recipeService,

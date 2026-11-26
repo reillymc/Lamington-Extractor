@@ -3,6 +3,7 @@ import { expect } from "expect";
 import request from "supertest";
 import {
     ExtractionLimitError,
+    FetchFailedError,
     UnsupportedMediaTypeError,
 } from "../../src/errors.ts";
 import { createApp } from "../../src/server.ts";
@@ -165,6 +166,31 @@ describe("extractor routes", () => {
         expect(response.body).toMatchObject({
             error: true,
             message: "Recipe content exceeds extraction limits",
+        });
+    });
+
+    it("returns upstream context in the error message", async () => {
+        const message =
+            "Upstream request failed: example.com returned 403 Forbidden (server: cloudflare, cf-mitigated: challenge)";
+        const failing: RecipeExtractionService = {
+            ...recipeService,
+            extractRecipe: async () => {
+                throw new FetchFailedError(message);
+            },
+        };
+
+        const response = await request(
+            createApp({ recipeService: failing, imageService }),
+        )
+            .post("/v1/recipe")
+            .send({
+                url: "https://example.com/recipe",
+            });
+
+        expect(response.status).toBe(502);
+        expect(response.body).toEqual({
+            error: true,
+            message,
         });
     });
 

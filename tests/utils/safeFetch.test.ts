@@ -75,7 +75,16 @@ describe("safeFetchText", () => {
 
         const result = await safeFetchText("http://example.com/recipe");
 
-        expect(result).toEqual({ ok: true, status: 200, text: "hello" });
+        expect(result).toEqual({
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            host: "example.com",
+            contentType: "text/plain;charset=UTF-8",
+            server: null,
+            mitigation: null,
+            text: "hello",
+        });
     });
 
     it("preserves non-ok responses", async () => {
@@ -83,7 +92,43 @@ describe("safeFetchText", () => {
 
         const result = await safeFetchText("https://example.com/recipe");
 
-        expect(result).toEqual({ ok: false, status: 404, text: "nope" });
+        expect(result).toEqual({
+            ok: false,
+            status: 404,
+            statusText: "Not Found",
+            host: "example.com",
+            contentType: "text/plain;charset=UTF-8",
+            server: null,
+            mitigation: null,
+            text: "nope",
+        });
+    });
+
+    it("captures safe upstream response metadata", async () => {
+        mockFetch(
+            async () =>
+                new Response("blocked", {
+                    status: 403,
+                    statusText: "Forbidden",
+                    headers: {
+                        "content-type": "text/html; charset=UTF-8",
+                        server: "cloudflare",
+                        "cf-mitigated": "challenge",
+                    },
+                }),
+        );
+
+        const result = await safeFetchText("https://example.com/recipe");
+
+        expect(result).toMatchObject({
+            ok: false,
+            status: 403,
+            statusText: "Forbidden",
+            host: "example.com",
+            contentType: "text/html; charset=UTF-8",
+            server: "cloudflare",
+            mitigation: "challenge",
+        });
     });
 
     it("rejects unsupported protocols", async () => {
@@ -177,7 +222,16 @@ describe("safeFetchText", () => {
 
         const result = await fetchText("https://example.com/recipe");
 
-        expect(result).toEqual({ ok: true, status: 200, text: "injected" });
+        expect(result).toEqual({
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            host: "example.com",
+            contentType: "text/plain;charset=UTF-8",
+            server: null,
+            mitigation: null,
+            text: "injected",
+        });
     });
 
     it("follows an allowed redirect", async () => {
@@ -185,7 +239,7 @@ describe("safeFetchText", () => {
             if (String(input) === "https://example.com/recipe") {
                 return new Response(null, {
                     status: 302,
-                    headers: { location: "https://example.com/final" },
+                    headers: { location: "https://recipes.example.com/final" },
                 });
             }
             return new Response("redirected", { status: 200 });
@@ -196,6 +250,11 @@ describe("safeFetchText", () => {
         expect(result).toEqual({
             ok: true,
             status: 200,
+            statusText: "OK",
+            host: "recipes.example.com",
+            contentType: "text/plain;charset=UTF-8",
+            server: null,
+            mitigation: null,
             text: "redirected",
         });
         expect(fetchMock.mock.callCount()).toEqual(2);

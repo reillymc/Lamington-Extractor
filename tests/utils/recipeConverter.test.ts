@@ -14,6 +14,7 @@ import {
     MAX_INGREDIENT_NAME_LENGTH,
     MAX_INGREDIENT_PREPARATION_LENGTH,
     MAX_INGREDIENT_TEXT_LENGTH,
+    MAX_INGREDIENT_VARIANTS,
     MAX_INGREDIENTS_PER_SECTION,
     MAX_METHOD_ITEMS,
     MAX_METHOD_ITEMS_PER_SECTION,
@@ -1192,11 +1193,242 @@ describe("convertRecipe", () => {
                             name: "Ingredients",
                             items: [
                                 {
-                                    name: "garlic cloves",
+                                    name: "garlic",
+                                    unit: "cloves",
                                     preparation: "minced",
                                     amount: {
                                         representation: "number",
                                         value: "2",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should parse ingredient with postfix garlic cloves unit and prep",
+                    input: {
+                        recipeIngredient: [
+                            "2 garlic cloves, pressed or minced",
+                        ],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "garlic",
+                                    unit: "cloves",
+                                    preparation: "pressed or minced",
+                                    amount: {
+                                        representation: "number",
+                                        value: "2",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should parse ingredient unit without amount and strip 'of'",
+                    input: {
+                        recipeIngredient: ["Pinch of red pepper flakes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "red pepper flakes",
+                                    unit: "pinch",
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should strip 'of' after a leading unit",
+                    input: { recipeIngredient: ["1 cup of flour"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "flour",
+                                    unit: "cup",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should expand 'or' alternatives into a full name and variants",
+                    input: {
+                        recipeIngredient: [
+                            "1 cup of brown or green lentils, picked over and rinsed",
+                        ],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "brown or green lentils",
+                                    variants: [
+                                        "brown lentils",
+                                        "green lentils",
+                                    ],
+                                    unit: "cup",
+                                    preparation: "picked over and rinsed",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should expand 'or' alternatives and move size to description",
+                    input: {
+                        recipeIngredient: [
+                            "1 medium yellow or white onion, chopped",
+                        ],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "yellow or white onion",
+                                    variants: ["yellow onion", "white onion"],
+                                    description: "medium",
+                                    preparation: "chopped",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should expand 'or' alternatives with a multi-word head",
+                    input: {
+                        recipeIngredient: ["2 red or green bell peppers"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "red or green bell peppers",
+                                    variants: [
+                                        "red bell peppers",
+                                        "green bell peppers",
+                                    ],
+                                    amount: {
+                                        representation: "number",
+                                        value: "2",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep complete 'or' alternatives without a shared head",
+                    input: { recipeIngredient: ["Butter or margarine"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "Butter or margarine",
+                                    variants: ["Butter", "margarine"],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should move a size descriptor to description",
+                    input: { recipeIngredient: ["1 large egg"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "egg",
+                                    description: "large",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should not treat postfix cloves as a unit when a leading unit exists",
+                    input: { recipeIngredient: ["1 tsp ground cloves"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "ground cloves",
+                                    unit: "tsp",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should collapse alternative names that differ only by size",
+                    input: {
+                        recipeIngredient: ["1 small or medium onion, chopped"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "onion",
+                                    description: "small, medium",
+                                    preparation: "chopped",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should not strip a size descriptor without a remaining name",
+                    input: { recipeIngredient: ["1 medium"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "medium",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
                                     },
                                 },
                             ],
@@ -1360,8 +1592,59 @@ describe("convertRecipe", () => {
 
         runTestCases(testCases, ({ input, expected }) => {
             const result = convertRecipe({ ...baseRecipe, ...input });
+            const ingredients = result.ingredients?.map((section) => ({
+                ...section,
+                items: section.items.map((item) =>
+                    Object.fromEntries(
+                        Object.entries(item).filter(([key]) => key !== "raw"),
+                    ),
+                ),
+            }));
 
-            expect(result.ingredients).toStrictEqual(expected);
+            expect(ingredients).toStrictEqual(expected);
+        });
+
+        it("should include the raw decoded ingredient line", () => {
+            const result = convertRecipe({
+                ...baseRecipe,
+                recipeIngredient: [
+                    "  4 garlic cloves, pressed or minced  ",
+                    "1 cup <b>flour</b>",
+                    "1 apple (sliced &amp; peeled)",
+                ],
+            });
+
+            expect(
+                result.ingredients?.[0]?.items.map((item) => item.raw),
+            ).toStrictEqual([
+                "4 garlic cloves, pressed or minced",
+                "1 cup flour",
+                "1 apple (sliced & peeled)",
+            ]);
+        });
+
+        it("should limit the number of ingredient variants", () => {
+            const modifiers = [
+                "red",
+                "green",
+                "yellow",
+                "orange",
+                "purple",
+                "black",
+                "white",
+                "brown",
+                "pink",
+                "blue",
+                "gold",
+            ];
+            const result = convertRecipe({
+                ...baseRecipe,
+                recipeIngredient: [`1 ${modifiers.join(" or ")} peppers`],
+            });
+
+            expect(result.ingredients?.[0]?.items[0]?.variants).toHaveLength(
+                MAX_INGREDIENT_VARIANTS,
+            );
         });
     });
 

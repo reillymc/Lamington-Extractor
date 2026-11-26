@@ -321,7 +321,21 @@ components:
         unit:
           type: string
           maxLength: 50
+        raw:
+          description: Decoded, trimmed ingredient line before parsing.
+          type: string
+          maxLength: 1024
         name:
+          type: string
+          maxLength: 255
+        variants:
+          description: Alternative ingredient names if relevant. The first entry is the preferred variant.
+          type: array
+          items:
+            type: string
+            maxLength: 255
+          maxItems: 10
+        description:
           type: string
           maxLength: 255
         preparation:

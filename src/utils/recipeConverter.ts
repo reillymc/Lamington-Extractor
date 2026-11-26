@@ -22,9 +22,11 @@ import {
     MAX_EXTRACTED_SOURCE_LENGTH,
     MAX_EXTRACTED_SUMMARY_LENGTH,
     MAX_IMAGES,
+    MAX_INGREDIENT_DESCRIPTION_LENGTH,
     MAX_INGREDIENT_NAME_LENGTH,
     MAX_INGREDIENT_PREPARATION_LENGTH,
     MAX_INGREDIENT_TEXT_LENGTH,
+    MAX_INGREDIENT_VARIANTS,
     MAX_INGREDIENTS_PER_SECTION,
     MAX_METHOD_ITEMS,
     MAX_METHOD_ITEMS_PER_SECTION,
@@ -583,6 +585,11 @@ const extractAmount = (
     return [text, undefined];
 };
 
+const isKnownUnit = (value: string): boolean => {
+    const unit = value.toLowerCase();
+    return knownUnits.has(unit) || knownUnits.has(unit.replace(/s$/, ""));
+};
+
 /**
  * Extract unit from the beginning of remaining text.
  * Handles both singular and plural forms (e.g. "cup" and "cups").
@@ -592,25 +599,180 @@ const extractUnit = (
     text: string,
 ): [unit: string | undefined, name: string] => {
     const parts = text.split(/\s+/);
-    const potentialUnit = parts[0]?.toLowerCase();
+    const firstWord = parts[0] ?? "";
+    const potentialUnit = firstWord.toLowerCase();
 
-    if (
-        potentialUnit &&
-        (knownUnits.has(potentialUnit) ||
-            knownUnits.has(potentialUnit.replace(/s$/, "")))
-    ) {
-        const remaining = text.substring(potentialUnit.length).trim();
-        return [potentialUnit, remaining];
+    if (isKnownUnit(potentialUnit)) {
+        const remaining = text
+            .substring(firstWord.length)
+            .trim()
+            .replace(/^of\s+/i, "")
+            .trim();
+        if (remaining.length > 0) {
+            return [potentialUnit, remaining];
+        }
     }
 
     return [undefined, text];
+};
+
+/** Units that commonly appear after the ingredient name, e.g. "garlic cloves". */
+const trailingUnits = new Set(["clove", "cloves"]);
+
+/**
+ * Extract a trailing unit from an ingredient name, e.g. "garlic cloves".
+ * @returns [name, unit]
+ */
+const extractTrailingUnit = (
+    text: string,
+): [name: string, unit: string | undefined] => {
+    const parts = text.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return [text, undefined];
+
+    const lastWord = parts[parts.length - 1];
+    const unit = lastWord?.toLowerCase();
+    if (!unit || !trailingUnits.has(unit)) return [text, undefined];
+
+    return [parts.slice(0, -1).join(" "), unit];
+};
+
+/**
+ * Expand "or" alternatives by appending the shared head phrase to each option.
+ * e.g. "brown or green lentils" -> ["brown lentils", "green lentils"]
+ */
+const expandOrAlternatives = (text: string): string[] => {
+    const parts = text
+        .split(/\s+or\s+/i)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+    if (parts.length < 2) return [text];
+
+    const lastPart = parts[parts.length - 1];
+    if (!lastPart) return [text];
+
+    const lastWords = lastPart.split(/\s+/);
+    const head = lastWords.length > 1 ? lastWords.slice(1).join(" ") : "";
+    const normalizedHead = head.toLowerCase();
+
+    const alternatives = head
+        ? parts.map((part, index) => {
+              if (index === parts.length - 1) return part;
+              return part.toLowerCase().endsWith(normalizedHead)
+                  ? part
+                  : `${part} ${head}`;
+          })
+        : parts;
+
+    const unique = new Map<string, string>();
+    for (const alternative of alternatives) {
+        const key = alternative.toLowerCase();
+        if (!unique.has(key)) unique.set(key, alternative);
+    }
+
+    return [...unique.values()].slice(0, MAX_INGREDIENT_VARIANTS);
+};
+
+/**
+ * Reconstruct a full ingredient name from its variants.
+ * e.g. ["brown lentils", "green lentils"] -> "brown or green lentils"
+ */
+const reconstructFullName = (variants: string[]): string => {
+    if (variants.length === 0) return "";
+    if (variants.length === 1) return variants[0] ?? "";
+
+    const wordLists = variants.map((variant) => variant.split(/\s+/));
+    const minWords = Math.min(...wordLists.map((words) => words.length));
+
+    let commonSuffixLength = 0;
+    for (let offset = 1; offset <= minWords; offset += 1) {
+        const reference = wordLists[0];
+        const candidate = reference?.[reference.length - offset]?.toLowerCase();
+        if (candidate === undefined) break;
+
+        const matches = wordLists.every(
+            (words) =>
+                words[words.length - offset]?.toLowerCase() === candidate,
+        );
+        if (!matches) break;
+
+        commonSuffixLength = offset;
+    }
+
+    if (commonSuffixLength === 0) return variants.join(" or ");
+
+    const reference = wordLists[0];
+    if (!reference) return variants.join(" or ");
+
+    const head = reference.slice(-commonSuffixLength).join(" ");
+    const prefixes = wordLists.map((words) =>
+        words.slice(0, words.length - commonSuffixLength).join(" "),
+    );
+
+    if (prefixes.some((prefix) => prefix.length === 0)) {
+        return variants.join(" or ");
+    }
+
+    return `${prefixes.join(" or ")} ${head}`;
+};
+
+/** Size descriptors that are moved from the name into the description. */
+const sizeDescriptorPatterns = [
+    "extra large",
+    "extra-large",
+    "x-large",
+    "jumbo",
+    "mini",
+    "small",
+    "medium",
+    "large",
+    "xl",
+].map((descriptor) => ({
+    descriptor,
+    regex: new RegExp(`^${descriptor}\\s+`, "i"),
+}));
+
+const MAX_SIZE_DESCRIPTORS = 3;
+
+/**
+ * Strip leading size descriptors from an ingredient name.
+ * @returns [name, descriptors]
+ */
+const extractSizeDescriptors = (
+    text: string,
+): [name: string, descriptors: string[]] => {
+    const descriptors: string[] = [];
+    let remaining = text.trim();
+
+    while (descriptors.length < MAX_SIZE_DESCRIPTORS) {
+        let matched: { descriptor: string; length: number } | undefined;
+
+        for (const { descriptor, regex } of sizeDescriptorPatterns) {
+            const result = regex.exec(remaining);
+            if (result) {
+                matched = { descriptor, length: result[0].length };
+                break;
+            }
+        }
+
+        if (!matched) break;
+
+        const candidate = remaining.slice(matched.length).trim();
+        if (!candidate) break;
+
+        descriptors.push(matched.descriptor);
+        remaining = candidate;
+    }
+
+    return [remaining, descriptors];
 };
 
 /**
  * Parse an ingredient string into components: name, amount, unit, and description.
  */
 const parseIngredientString = (raw: string): ParsedIngredient => {
-    let text = decodeHtml(raw)?.trim() || "";
+    const rawText = decodeHtml(raw)?.trim() || "";
+    let text = rawText;
 
     const [textAfterParen, parentDesc] = extractParentheticalDescription(text);
     text = textAfterParen;
@@ -619,11 +781,9 @@ const parseIngredientString = (raw: string): ParsedIngredient => {
 
     let [textAfterAmount, amount] = extractAmount(text);
 
-    let [unit, nameWithSuffix] = amount
-        ? extractUnit(textAfterAmount)
-        : [undefined, textAfterAmount];
+    let [unit, nameWithSuffix] = extractUnit(textAfterAmount);
 
-    let [name, commaSuffix] = extractCommaSuffix(nameWithSuffix);
+    let [namePart, commaSuffix] = extractCommaSuffix(nameWithSuffix);
 
     // If no amount found yet, try to parse it from the comma suffix to handle cases like "Water, 150 g"
     if (!amount && commaSuffix) {
@@ -631,32 +791,91 @@ const parseIngredientString = (raw: string): ParsedIngredient => {
         if (suffixAmount) {
             amount = suffixAmount;
             const [suffixUnit, suffixName] = extractUnit(suffixAfterAmount);
-            unit = suffixUnit;
-            // The suffix parts become the name, original name stays as is
-            commaSuffix = suffixName || undefined;
+            if (suffixUnit) {
+                unit = suffixUnit;
+                commaSuffix = suffixName || undefined;
+            } else if (isKnownUnit(suffixAfterAmount)) {
+                unit = suffixAfterAmount.toLowerCase();
+                commaSuffix = undefined;
+            } else {
+                commaSuffix = suffixName || undefined;
+            }
         }
     }
 
-    // Combine descriptions from parentheses and remaining comma suffix
-    const description = commaSuffix
-        ? parentDesc
-            ? `${commaSuffix}, ${parentDesc}`
-            : commaSuffix
-        : parentDesc;
+    if (!unit) {
+        [namePart, unit] = extractTrailingUnit(namePart);
+    }
+
+    const variants: string[] = [];
+    const sizeDescriptors: string[] = [];
+
+    for (const alternative of expandOrAlternatives(namePart)) {
+        const [variant, descriptors] = extractSizeDescriptors(alternative);
+        const finalVariant = variant || alternative;
+
+        if (
+            finalVariant &&
+            !variants.some(
+                (existing) =>
+                    existing.toLowerCase() === finalVariant.toLowerCase(),
+            )
+        ) {
+            variants.push(finalVariant);
+        }
+
+        for (const descriptor of descriptors) {
+            if (
+                !sizeDescriptors.some(
+                    (existing) =>
+                        existing.toLowerCase() === descriptor.toLowerCase(),
+                )
+            ) {
+                sizeDescriptors.push(descriptor);
+            }
+        }
+    }
+
+    const name = reconstructFullName(variants) || undefined;
+    const variantList = variants.length > 1 ? variants : undefined;
+    const description =
+        sizeDescriptors.length > 0 ? sizeDescriptors.join(", ") : undefined;
+
+    // Preparation excludes size descriptors, which are returned separately.
+    const preparationParts: string[] = [];
+    if (commaSuffix) preparationParts.push(commaSuffix);
+    if (parentDesc) preparationParts.push(parentDesc);
+    const preparation =
+        preparationParts.length > 0 ? preparationParts.join(", ") : undefined;
 
     assertAmountValues(amount);
 
     const parsed = stripUndefined({
+        raw: rawText || undefined,
         name,
+        variants: variantList,
+        description,
         amount,
         unit,
-        preparation: description,
+        preparation,
     });
 
     assertMaxLength(
-        parsed.name,
+        name,
         MAX_INGREDIENT_NAME_LENGTH,
         "Recipe ingredient name is too long",
+    );
+    for (const variant of parsed.variants ?? []) {
+        assertMaxLength(
+            variant,
+            MAX_INGREDIENT_NAME_LENGTH,
+            "Recipe ingredient variant is too long",
+        );
+    }
+    assertMaxLength(
+        parsed.description,
+        MAX_INGREDIENT_DESCRIPTION_LENGTH,
+        "Recipe ingredient description is too long",
     );
     assertMaxLength(
         parsed.preparation,

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Lamington Extractor
-  version: 1.1.0
+  version: 1.2.0
 servers:
   - url: http://localhost:3001
 security:
@@ -326,19 +326,22 @@ components:
           type: string
           maxLength: 1024
         name:
+          description: Ingredient identity, excluding pure preparation modifiers.
           type: string
           maxLength: 255
         variants:
-          description: Alternative ingredient names if relevant. The first entry is the preferred variant.
+          description: Identity alternatives, excluding preparation modifiers. Supports "or" and "/" phrasing. The first entry is the preferred variant.
           type: array
           items:
             type: string
             maxLength: 255
           maxItems: 10
         description:
+          description: Size/descriptive qualifiers.
           type: string
           maxLength: 255
         preparation:
+          description: Preparation actions/details only.
           type: string
           maxLength: 255
       unevaluatedProperties: false

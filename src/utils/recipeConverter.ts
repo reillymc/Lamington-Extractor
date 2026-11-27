@@ -432,7 +432,22 @@ const knownUnits = new Set([
     "pinches",
     "clove",
     "cloves",
+    "can",
+    "tin",
+    "jar",
 ]);
+
+/** Packaging units that usually indicate a pre-prepared product. */
+const packagingUnits = new Set(["can", "cans", "tin", "tins", "jar", "jars"]);
+
+const prePreparedProductStatePattern = /\b(?:canned|tinned|jarred)\b/i;
+
+const isPrePreparedProduct = (
+    unit: string | undefined,
+    name: string,
+): boolean =>
+    (unit !== undefined && packagingUnits.has(unit.toLowerCase())) ||
+    prePreparedProductStatePattern.test(name);
 
 /**
  * Safely extract a capture group from a regex match.
@@ -637,19 +652,24 @@ const extractTrailingUnit = (
 };
 
 /**
- * Expand "or" alternatives by appending the shared head phrase to each option.
+ * Expand "or" and slash alternatives by appending the shared head phrase to
+ * each option.
  * e.g. "brown or green lentils" -> ["brown lentils", "green lentils"]
+ *      "sunflower / vegetable oil" -> ["sunflower oil", "vegetable oil"]
  */
-const expandOrAlternatives = (text: string): string[] => {
+const expandAlternatives = (
+    text: string,
+): { alternatives: string[]; separator: string } => {
+    const usesSlashOnly = /\//.test(text) && !/\s+or\s+/i.test(text);
     const parts = text
-        .split(/\s+or\s+/i)
+        .split(/\s+or\s+|\s*\/\s*/i)
         .map((part) => part.trim())
         .filter(Boolean);
 
-    if (parts.length < 2) return [text];
+    if (parts.length < 2) return { alternatives: [text], separator: " or " };
 
     const lastPart = parts[parts.length - 1];
-    if (!lastPart) return [text];
+    if (!lastPart) return { alternatives: [text], separator: " or " };
 
     const lastWords = lastPart.split(/\s+/);
     const head = lastWords.length > 1 ? lastWords.slice(1).join(" ") : "";
@@ -670,14 +690,20 @@ const expandOrAlternatives = (text: string): string[] => {
         if (!unique.has(key)) unique.set(key, alternative);
     }
 
-    return [...unique.values()].slice(0, MAX_INGREDIENT_VARIANTS);
+    return {
+        alternatives: [...unique.values()].slice(0, MAX_INGREDIENT_VARIANTS),
+        separator: usesSlashOnly ? " / " : " or ",
+    };
 };
 
 /**
  * Reconstruct a full ingredient name from its variants.
  * e.g. ["brown lentils", "green lentils"] -> "brown or green lentils"
  */
-const reconstructFullName = (variants: string[]): string => {
+const reconstructFullName = (
+    variants: string[],
+    separator = " or ",
+): string => {
     if (variants.length === 0) return "";
     if (variants.length === 1) return variants[0] ?? "";
 
@@ -699,10 +725,10 @@ const reconstructFullName = (variants: string[]): string => {
         commonSuffixLength = offset;
     }
 
-    if (commonSuffixLength === 0) return variants.join(" or ");
+    if (commonSuffixLength === 0) return variants.join(separator);
 
     const reference = wordLists[0];
-    if (!reference) return variants.join(" or ");
+    if (!reference) return variants.join(separator);
 
     const head = reference.slice(-commonSuffixLength).join(" ");
     const prefixes = wordLists.map((words) =>
@@ -710,10 +736,10 @@ const reconstructFullName = (variants: string[]): string => {
     );
 
     if (prefixes.some((prefix) => prefix.length === 0)) {
-        return variants.join(" or ");
+        return variants.join(separator);
     }
 
-    return `${prefixes.join(" or ")} ${head}`;
+    return `${prefixes.join(separator)} ${head}`;
 };
 
 /** Size descriptors that are moved from the name into the description. */
@@ -767,6 +793,112 @@ const extractSizeDescriptors = (
     return [remaining, descriptors];
 };
 
+/** Preparation-only modifiers that should not remain in the ingredient name. */
+const preparationModifierWords = new Set([
+    "finely",
+    "chopped",
+    "minced",
+    "grated",
+    "crushed",
+    "peeled",
+    "roughly",
+    "diced",
+]);
+
+const preparationConnectorWords = new Set(["and", "&"]);
+
+type PreparationModifierExtraction = {
+    name: string;
+    preparation: string | undefined;
+};
+
+/**
+ * Move preparation-only modifiers from the edges of an ingredient name into
+ * preparation, preserving their original order and text.
+ */
+const extractPreparationModifiers = (
+    text: string,
+): PreparationModifierExtraction => {
+    const tokens = text.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return { name: text, preparation: undefined };
+
+    const isModifier = (token: string | undefined): boolean =>
+        token !== undefined &&
+        preparationModifierWords.has(token.toLowerCase());
+    const isConnector = (token: string | undefined): boolean =>
+        token !== undefined &&
+        preparationConnectorWords.has(token.toLowerCase());
+
+    const removed = new Set<number>();
+    for (let index = 0; index < tokens.length; index += 1) {
+        if (isModifier(tokens[index])) removed.add(index);
+    }
+
+    if (removed.size === 0) return { name: text, preparation: undefined };
+
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (let index = 1; index < tokens.length - 1; index += 1) {
+            if (
+                !removed.has(index) &&
+                isConnector(tokens[index]) &&
+                removed.has(index - 1) &&
+                removed.has(index + 1)
+            ) {
+                removed.add(index);
+                changed = true;
+            }
+        }
+    }
+
+    const nameTokens: string[] = [];
+    for (let index = 0; index < tokens.length; index += 1) {
+        if (removed.has(index)) continue;
+        const token = tokens[index];
+        if (token !== undefined) nameTokens.push(token);
+    }
+
+    while (nameTokens.length > 0 && isConnector(nameTokens[0])) {
+        nameTokens.shift();
+    }
+    while (
+        nameTokens.length > 0 &&
+        isConnector(nameTokens[nameTokens.length - 1])
+    ) {
+        nameTokens.pop();
+    }
+
+    if (nameTokens.length === 0) {
+        return { name: text, preparation: undefined };
+    }
+
+    const preparationParts: string[] = [];
+    let currentPart: string[] = [];
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        if (token === undefined) continue;
+
+        if (removed.has(index)) {
+            currentPart.push(token);
+            continue;
+        }
+
+        if (currentPart.length > 0) {
+            preparationParts.push(currentPart.join(" "));
+            currentPart = [];
+        }
+    }
+    if (currentPart.length > 0) {
+        preparationParts.push(currentPart.join(" "));
+    }
+
+    return {
+        name: nameTokens.join(" "),
+        preparation: preparationParts.join(", "),
+    };
+};
+
 /**
  * Parse an ingredient string into components: name, amount, unit, and description.
  */
@@ -807,12 +939,58 @@ const parseIngredientString = (raw: string): ParsedIngredient => {
         [namePart, unit] = extractTrailingUnit(namePart);
     }
 
+    const preservePreparationDescriptors = isPrePreparedProduct(unit, namePart);
+
     const variants: string[] = [];
     const sizeDescriptors: string[] = [];
+    const preparationModifiers: string[] = [];
+    const { alternatives, separator } = expandAlternatives(namePart);
 
-    for (const alternative of expandOrAlternatives(namePart)) {
-        const [variant, descriptors] = extractSizeDescriptors(alternative);
-        const finalVariant = variant || alternative;
+    for (const alternative of alternatives) {
+        let remaining = alternative;
+
+        while (remaining) {
+            let afterPreparation = remaining;
+            let extractedPreparation: string | undefined;
+
+            if (!preservePreparationDescriptors) {
+                const extraction =
+                    extractPreparationModifiers(afterPreparation);
+                afterPreparation = extraction.name;
+                extractedPreparation = extraction.preparation;
+            }
+
+            const [afterSize, descriptors] =
+                extractSizeDescriptors(afterPreparation);
+
+            if (!extractedPreparation && descriptors.length === 0) break;
+
+            if (
+                extractedPreparation &&
+                !preparationModifiers.some(
+                    (existing) =>
+                        existing.toLowerCase() ===
+                        extractedPreparation.toLowerCase(),
+                )
+            ) {
+                preparationModifiers.push(extractedPreparation);
+            }
+
+            for (const descriptor of descriptors) {
+                if (
+                    !sizeDescriptors.some(
+                        (existing) =>
+                            existing.toLowerCase() === descriptor.toLowerCase(),
+                    )
+                ) {
+                    sizeDescriptors.push(descriptor);
+                }
+            }
+
+            remaining = afterSize;
+        }
+
+        const finalVariant = remaining || alternative;
 
         if (
             finalVariant &&
@@ -823,26 +1001,15 @@ const parseIngredientString = (raw: string): ParsedIngredient => {
         ) {
             variants.push(finalVariant);
         }
-
-        for (const descriptor of descriptors) {
-            if (
-                !sizeDescriptors.some(
-                    (existing) =>
-                        existing.toLowerCase() === descriptor.toLowerCase(),
-                )
-            ) {
-                sizeDescriptors.push(descriptor);
-            }
-        }
     }
 
-    const name = reconstructFullName(variants) || undefined;
+    const name = reconstructFullName(variants, separator) || undefined;
     const variantList = variants.length > 1 ? variants : undefined;
     const description =
         sizeDescriptors.length > 0 ? sizeDescriptors.join(", ") : undefined;
 
     // Preparation excludes size descriptors, which are returned separately.
-    const preparationParts: string[] = [];
+    const preparationParts = [...preparationModifiers];
     if (commaSuffix) preparationParts.push(commaSuffix);
     if (parentDesc) preparationParts.push(parentDesc);
     const preparation =

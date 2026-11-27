@@ -953,7 +953,388 @@ describe("convertRecipe", () => {
                     expected: [
                         {
                             name: "Ingredients",
-                            items: [{ name: "sunflower / vegetable oil" }],
+                            items: [
+                                {
+                                    name: "sunflower / vegetable oil",
+                                    variants: [
+                                        "sunflower oil",
+                                        "vegetable oil",
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should move leading preparation modifiers into preparation",
+                    input: {
+                        recipeIngredient: ["2 tbsp finely chopped parsley"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "parsley",
+                                    unit: "tbsp",
+                                    preparation: "finely chopped",
+                                    amount: {
+                                        representation: "number",
+                                        value: "2",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should move size descriptors to description",
+                    input: { recipeIngredient: ["1 small onion"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "onion",
+                                    description: "small",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparing a trailing unit after a comma",
+                    input: { recipeIngredient: ["garlic cloves, minced"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "garlic",
+                                    unit: "cloves",
+                                    preparation: "minced",
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep identity-distinguishing fresh in the name",
+                    input: { recipeIngredient: ["fresh basil"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [{ name: "fresh basil" }],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep an identity descriptor while moving preparation modifiers",
+                    input: { recipeIngredient: ["fresh chopped parsley"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "fresh parsley",
+                                    preparation: "chopped",
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should handle size and preparation modifiers in either order",
+                    input: {
+                        recipeIngredient: ["1 small finely chopped onion"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "onion",
+                                    description: "small",
+                                    preparation: "finely chopped",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep identity-distinguishing ground in the name",
+                    input: { recipeIngredient: ["ground almonds"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [{ name: "ground almonds" }],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep identity-distinguishing roasted in the name",
+                    input: { recipeIngredient: ["roasted red peppers"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [{ name: "roasted red peppers" }],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for canned chopped tomatoes",
+                    input: { recipeIngredient: ["1 can chopped tomatoes"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "chopped tomatoes",
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for canned crushed tomatoes",
+                    input: { recipeIngredient: ["1 can crushed tomatoes"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "crushed tomatoes",
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for canned diced tomatoes",
+                    input: { recipeIngredient: ["1 can diced tomatoes"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "diced tomatoes",
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep adverb preparation descriptors for canned tomatoes",
+                    input: {
+                        recipeIngredient: ["1 can finely chopped tomatoes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "finely chopped tomatoes",
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should parse plural packaging units for pre-prepared products",
+                    input: {
+                        recipeIngredient: ["2 cans of chopped tomatoes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "chopped tomatoes",
+                                    unit: "cans",
+                                    amount: {
+                                        representation: "number",
+                                        value: "2",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for canned adjective products",
+                    input: {
+                        recipeIngredient: ["canned chopped tomatoes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [{ name: "canned chopped tomatoes" }],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for tinned adjective products",
+                    input: {
+                        recipeIngredient: ["tinned chopped tomatoes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [{ name: "tinned chopped tomatoes" }],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep preparation descriptors for jarred products",
+                    input: { recipeIngredient: ["1 jar chopped tomatoes"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "chopped tomatoes",
+                                    unit: "jar",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should parse canned tomatoes without preparation descriptors",
+                    input: { recipeIngredient: ["1 can tomatoes"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "tomatoes",
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep explicit comma preparation for canned products",
+                    input: {
+                        recipeIngredient: ["1 can chopped tomatoes, drained"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "chopped tomatoes",
+                                    unit: "can",
+                                    preparation: "drained",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should keep explicit parenthetical preparation for canned products",
+                    input: {
+                        recipeIngredient: ["1 can chopped tomatoes (diced)"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "chopped tomatoes",
+                                    unit: "can",
+                                    preparation: "diced",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should expand slash alternatives for canned products",
+                    input: {
+                        recipeIngredient: ["1 can crushed / diced tomatoes"],
+                    },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "crushed / diced tomatoes",
+                                    variants: [
+                                        "crushed tomatoes",
+                                        "diced tomatoes",
+                                    ],
+                                    unit: "can",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name: "should still move preparation descriptors without packaging",
+                    input: { recipeIngredient: ["1 chopped tomato"] },
+                    expected: [
+                        {
+                            name: "Ingredients",
+                            items: [
+                                {
+                                    name: "tomato",
+                                    preparation: "chopped",
+                                    amount: {
+                                        representation: "number",
+                                        value: "1",
+                                    },
+                                },
+                            ],
                         },
                     ],
                 },
@@ -1151,8 +1532,9 @@ describe("convertRecipe", () => {
                             name: "Ingredients",
                             items: [
                                 {
-                                    name: "grated parmesan",
+                                    name: "parmesan",
                                     unit: "cup",
+                                    preparation: "grated",
                                     amount: {
                                         representation: "fraction",
                                         value: ["0", "1", "4"],
@@ -1174,8 +1556,9 @@ describe("convertRecipe", () => {
                             name: "Ingredients",
                             items: [
                                 {
-                                    name: "crushed red pepper flakes",
+                                    name: "red pepper flakes",
                                     unit: "teaspoon",
+                                    preparation: "crushed",
                                     amount: {
                                         representation: "range",
                                         value: ["1/4", "1/2"],

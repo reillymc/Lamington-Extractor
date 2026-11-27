@@ -6,7 +6,7 @@ RUN mkdir -p /home/node/app && chown -R node:node /home/node/app
 WORKDIR /home/node/app
 
 COPY package*.json .
-COPY tools/Scripts/generate_spec.ts ./tools/Scripts/generate_spec.ts
+COPY tools/scripts/generate_spec.ts ./tools/scripts/generate_spec.ts
 COPY openapi.yaml .
 
 RUN npm ci
@@ -19,7 +19,7 @@ FROM node:24-alpine AS production
 WORKDIR /home/node/app
 
 COPY package*.json .
-COPY tools/Scripts/generate_spec.ts ./tools/Scripts/generate_spec.ts
+COPY tools/scripts/generate_spec.ts ./tools/scripts/generate_spec.ts
 
 RUN npm ci --omit=dev
 

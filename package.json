@@ -14,8 +14,10 @@
         "typecheck": "tsc --noEmit",
         "knip": "knip",
         "quality:check": "npm run lint && npm run typecheck && npm run knip",
-        "generate:spec": "node tools/Scripts/generate_spec.ts",
-        "postinstall": "node tools/Scripts/generate_spec.ts --if-available",
+        "sync:version": "node tools/scripts/sync_version.ts",
+        "version": "node tools/scripts/sync_version.ts && git add openapi.yaml",
+        "generate:spec": "node tools/scripts/generate_spec.ts",
+        "postinstall": "node tools/scripts/generate_spec.ts --if-available",
         "typecheck:watch": "tsc --noEmit --watch"
     },
     "dependencies": {
